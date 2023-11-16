@@ -1,6 +1,8 @@
 --------------------------------------------------------------------------------
 Implement [Chinese-BERT-wwm](https://github.com/ymcui/Chinese-BERT-wwm) to Fariseq 
 --------------------------------------------------------------------------------
+**Fairseq toolkit lacks of implement of BERT-based task and Chinese Whole Word Masking method. So I performed minimal modifications on Fairseq to extend its capabilities in these two targets.**
+
 <p align="center">
   
   ### Main Aspects of Updates
