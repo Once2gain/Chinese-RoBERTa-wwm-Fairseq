@@ -6,6 +6,8 @@
 
 from .dictionary import Dictionary, TruncatedDictionary
 
+from .tokenizer_dictionary import TokenizerDictionary
+
 from .fairseq_dataset import FairseqDataset, FairseqIterableDataset
 
 from .base_wrapper_dataset import BaseWrapperDataset
@@ -134,4 +136,5 @@ __all__ = [
     "TransformEosConcatLangPairDataset",
     "TruncateDataset",
     "TruncatedDictionary",
+    "TokenizerDictionary",
 ]

@@ -8,7 +8,7 @@ from typing import Optional
 
 from fairseq.data.encoders import register_bpe
 from fairseq.dataclass import FairseqDataclass
-
+from typing import List
 
 @dataclass
 class BertBPEConfig(FairseqDataclass):
@@ -40,6 +40,9 @@ class BertBPE(object):
 
     def encode(self, x: str) -> str:
         return " ".join(self.bert_tokenizer.tokenize(x))
+
+    def tokenize(self, x: str) -> List[str]:
+        return self.bert_tokenizer.tokenize(x)
 
     def decode(self, x: str) -> str:
         return self.bert_tokenizer.clean_up_tokenization(

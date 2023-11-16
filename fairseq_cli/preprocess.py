@@ -111,6 +111,7 @@ def _make_binary_dataset(
     binarizer = VocabularyDatasetBinarizer(
         vocab,
         append_eos=True,
+        already_numberized=True if input_prefix.split('.')[-1] == 'ref' else False
     )
 
     input_file = "{}{}".format(input_prefix, ("." + lang) if lang is not None else "")
@@ -185,18 +186,30 @@ def _make_all(lang, vocab, args):
         _make_dataset(
             vocab, args.trainpref, "train", lang, args=args, num_workers=args.workers
         )
+        if args.ref:
+            _make_dataset(
+                vocab, '{}.{}'.format(args.trainpref, 'ref'), "train.ref", lang, args=args, num_workers=args.workers
+            )
     if args.validpref:
         for k, validpref in enumerate(args.validpref.split(",")):
             outprefix = "valid{}".format(k) if k > 0 else "valid"
             _make_dataset(
                 vocab, validpref, outprefix, lang, args=args, num_workers=args.workers
             )
+            if args.ref:
+                _make_dataset(
+                    vocab, '{}.{}'.format(validpref, 'ref'), '{}.{}'.format(outprefix, 'ref'), lang, args=args, num_workers=args.workers
+                )
     if args.testpref:
         for k, testpref in enumerate(args.testpref.split(",")):
             outprefix = "test{}".format(k) if k > 0 else "test"
             _make_dataset(
                 vocab, testpref, outprefix, lang, args=args, num_workers=args.workers
             )
+            if args.ref:
+                _make_dataset(
+                    vocab, '{}.{}'.format(testpref, 'ref'), '{}.{}'.format(outprefix, 'ref'), lang, args=args, num_workers=args.workers
+                )
 
 
 def _make_all_alignments(args):
@@ -332,7 +345,7 @@ def main(args):
         tgt_dict = src_dict
     else:
         if args.srcdict:
-            src_dict = task.load_dictionary(args.srcdict)
+            src_dict = task.load_dictionary(args.srcdict, do_ch_wwm=args.ref)
         else:
             assert (
                 args.trainpref
@@ -385,6 +398,11 @@ def main(args):
 
 def cli_main():
     parser = options.get_preprocessing_parser()
+    parser.add_argument(
+        "--ref",
+        action="store_true",
+        help="process ref files",
+    )
     args = parser.parse_args()
     main(args)
 

@@ -8,6 +8,8 @@ RoBERTa: A Robustly Optimized BERT Pretraining Approach.
 
 import logging
 
+import os
+from transformers.models.bert import modeling_bert
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -49,6 +51,11 @@ class RobertaModel(FairseqEncoderModel):
         self.apply(init_bert_params)
 
         self.classification_heads = nn.ModuleDict()
+
+        if args.huggingface_pretrained is not None:
+            model_path = args.huggingface_pretrained
+            assert os.path.exists(model_path), '%s does not exist' % model_path
+            self.from_huggingface_pretrained(model_path)
 
     @staticmethod
     def add_args(parser):
@@ -216,6 +223,12 @@ class RobertaModel(FairseqEncoderModel):
             default=-1,
             help="number of feedforward blocks to remove in each transformer layer, -1 means keeping all ffn blocks",
         )
+        parser.add_argument(
+            "--huggingface-pretrained",
+            type=str,
+            default=None,
+            help="path to HuggingFace model(.bin) and load state dict from it",
+        )
 
     @classmethod
     def build_model(cls, args, task):
@@ -240,6 +253,81 @@ class RobertaModel(FairseqEncoderModel):
             OmegaConf.set_struct(args, True)
 
         return cls(args, encoder)
+
+    def from_huggingface_pretrained(self, model_path):
+        print('Load params from %s...' % model_path)
+        state_dict = torch.load(model_path, map_location='cpu')
+        state_dict = self._trim_state_dict(state_dict)
+        self.load_state_dict(state_dict, strict=True)
+
+    def _trim_state_dict(self, state_dict):
+        # for name, p in self.named_parameters():
+        #     print(name, p.shape)
+        # for name, p in state_dict.named_parameters():
+        #     print(name, p.shape)
+        # return state_dict
+        replace_dict = {
+            'embeddings.word_embeddings': 'embed_tokens',
+            'embeddings.position_embeddings': 'embed_positions',
+            # 'embeddings.token_type_embeddings': 'segment_embeddings',
+            'embeddings.LayerNorm': 'emb_layer_norm',
+            'attention.self.key': 'self_attn.k_proj',
+            'attention.self.query': 'self_attn.v_proj',
+            'attention.self.value': 'self_attn.q_proj',
+            'attention.output.dense': 'self_attn.out_proj',
+            'attention.output.LayerNorm': 'self_attn_layer_norm',
+            'intermediate.dense': 'fc1',
+            'output.dense': 'fc2',
+            'output.LayerNorm': 'final_layer_norm',
+        }
+        new_state_dict = {}
+        for name in state_dict:
+            if not name.startswith('bert.') or '.token_type_embeddings.' in name or '.pooler.' in name:
+                # overlook
+                continue
+
+            if name.startswith('bert.encoder'):
+                new_name = name.replace('bert.encoder', 'encoder.sentence_encoder')
+            else:
+                new_name = name.replace('bert', 'encoder.sentence_encoder')
+
+            if '.layer.' in new_name:
+                new_name = new_name.replace('.layer.', '.layers.')
+
+            for key in replace_dict.keys():
+                if key in new_name:
+                    new_name = new_name.replace(key, replace_dict[key])
+                    break
+            new_state_dict[new_name] = state_dict[name]
+
+        missing_keys = [
+            "encoder.lm_head.weight",
+            "encoder.lm_head.bias",
+            "encoder.lm_head.dense.weight",
+            "encoder.lm_head.dense.bias",
+            "encoder.lm_head.layer_norm.weight",
+            "encoder.lm_head.layer_norm.bias"
+        ]
+        for name in missing_keys:
+            new_state_dict[name] = self.state_dict()[name]
+
+        return new_state_dict
+        # for name, p in self.named_parameters():
+        #     if name in states and p.size() == states[name].size():
+        #         print('Load %s...' % name)
+        #         p.data.copy_(states[name])
+        #     elif name in states:
+        #         print('WARNING: %s size mismatch, checkpoint:' % name, states[name].size(), ' model:',
+        #               p.data.size())
+        #         ckt_sz = states[name].size()
+        #         if len(p.data.size()) == 1:
+        #             p.data[:ckt_sz[0]].copy_(states[name])
+        #         elif len(p.data.size()) == 2:
+        #             p.data[:ckt_sz[0], :ckt_sz[1]].copy_(states[name])
+        #         else:
+        #             assert False
+        #     else:
+        #         print('WARNING: can not find %s in checkpoint' % name)
 
     def forward(
         self,

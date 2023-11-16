@@ -6,18 +6,21 @@ common:
 
 checkpoint:
   no_epoch_checkpoints: true
+  save_dir: checkpoints
 
 task:
   _name: masked_lm
-  data: /data/tangqirui/Para/fairseq/data-bin/wikitext-103
+  data: /data/tangqirui/Para/fairseq/data-bin/zwtext
   sample_break_mode: complete
-  tokens_per_sample: 512
+  tokens_per_sample: 511
+  shorten_method: truncate
 #  mask_whole_words: true
+  do_ch_wwm: true
 
 criterion: masked_lm
 
 dataset:
-  batch_size: 16
+  batch_size: 32
   ignore_unused_valid_subsets: true
 
 optimizer:
@@ -32,12 +35,15 @@ lr_scheduler:
 
 optimization:
   clip_norm: 0
-  lr: [0.0005]
-  max_update: 125000
-  update_freq: [16]
+  lr: [0.00005]
+  max_update: 2000000
+  update_freq: [12]
 
 model:
   _name: roberta
-  max_positions: 512
+  max_positions: 511
   dropout: 0.1
   attention_dropout: 0.1
+  huggingface_pretrained: /data/tangqirui/Para/fairseq/huggingface/chinese_roberta_wwm_ext/pytorch_model.bin
+
+

@@ -25,6 +25,7 @@ from fairseq.data import (
     TokenBlockDataset,
     data_utils,
 )
+from fairseq.data import TokenizerDictionary
 from fairseq.data.encoders.utils import get_whole_word_mask
 from fairseq.data.shorten_dataset import maybe_shorten_dataset
 from fairseq.dataclass import FairseqDataclass
@@ -123,6 +124,10 @@ class MaskedLMConfig(FairseqDataclass):
         default=False,
         metadata={"help": "prepare dataset for data2vec_multi"},
     )
+    do_ch_wwm: bool = field(
+        default=False,
+        metadata={"help": "do chinese whole word mask"},
+    )
 
 
 @register_task("masked_lm", dataclass=MaskedLMConfig)
@@ -130,14 +135,16 @@ class MaskedLMTask(FairseqTask):
 
     cfg: MaskedLMConfig
 
-    """Task for training masked language models (e.g., BERT, RoBERTa)."""
+    """Task for training masked language models (e.g., BERT, RoBERTa, chinese-roberta-wwm)."""
 
     def __init__(self, cfg: MaskedLMConfig, dictionary=None):
         super().__init__(cfg)
         self.dictionary = dictionary or self.load_dict(cfg)
-
         # add mask token
-        self.mask_idx = self.dictionary.add_symbol("<mask>")
+        if cfg.do_ch_wwm:
+            self.mask_idx = self.dictionary.mask_index
+        else:
+            self.mask_idx = self.dictionary.add_symbol("<mask>")
 
     @classmethod
     def setup_task(cls, cfg: MaskedLMConfig, **kwargs):
@@ -148,16 +155,26 @@ class MaskedLMTask(FairseqTask):
     def load_dict(cls, cfg):
         paths = utils.split_paths(cfg.data)
         assert len(paths) > 0
-        dictionary = Dictionary.load(os.path.join(paths[0], "dict.txt"))
+        if cfg.do_ch_wwm:
+            # use bert dictionary
+            dictionary = TokenizerDictionary.load(os.path.join(paths[0], "dict.txt"))
+        else:
+            dictionary = Dictionary.load(os.path.join(paths[0], "dict.txt"))
         logger.info("dictionary: {} types".format(len(dictionary)))
         return dictionary
+
+    @classmethod
+    def load_dictionary(cls, filename, do_ch_wwm=False):
+        if do_ch_wwm:
+            return TokenizerDictionary.load(filename)
+        else:
+            super().load_dictionary(filename)
 
     def _load_dataset_split(self, split, epoch, combine):
         paths = utils.split_paths(self.cfg.data)
         assert len(paths) > 0
         data_path = paths[(epoch - 1) % len(paths)]
         split_path = os.path.join(data_path, split)
-
         dataset = data_utils.load_indexed_dataset(
             split_path,
             self.source_dictionary,
@@ -173,7 +190,7 @@ class MaskedLMTask(FairseqTask):
             split,
             self.cfg.shorten_data_split_list,
             self.cfg.shorten_method,
-            self.cfg.tokens_per_sample,
+            self.cfg.tokens_per_sample - 1,
             self.cfg.seed,
         )
 
@@ -198,11 +215,16 @@ class MaskedLMTask(FairseqTask):
             split (str): name of the split (e.g., train, valid, test)
         """
         dataset = self._load_dataset_split(split, epoch, combine)
+        ref_dataset = None
+        if self.cfg.do_ch_wwm:
+            branch = split + '.ref'
+            ref_dataset = self._load_dataset_split(branch, epoch, combine)
 
+        # self.cfg._name = 'bert'
         # create masked input and targets
         mask_whole_words = (
-            get_whole_word_mask(self.args, self.source_dictionary)
-            if self.cfg.mask_whole_words
+            get_whole_word_mask(self.cfg, self.source_dictionary)
+            if self.cfg.mask_whole_words and not self.cfg.do_ch_wwm
             else None
         )
 
@@ -220,6 +242,7 @@ class MaskedLMTask(FairseqTask):
             mask_multiple_length=self.cfg.mask_multiple_length,
             mask_stdev=self.cfg.mask_stdev,
             skip_masking=self.cfg.skip_masking,
+            ref_dataset=ref_dataset,
         )
 
         with data_utils.numpy_seed(self.cfg.seed):

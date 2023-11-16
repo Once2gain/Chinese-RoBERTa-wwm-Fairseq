@@ -43,6 +43,9 @@ class MaskTokensDataset(BaseWrapperDataset):
             value is 1.
         mask_stdev : standard deviation of masks distribution in case of
             multiple masking. Default value is 0.
+        ref_dataset: when ref_dataset is not None, mask whole chinese words,
+            which needs a ref indicating whether a token is the sub chinese word.
+            We will extend any mask to encompass the whole word.
     """
 
     @classmethod
@@ -70,6 +73,7 @@ class MaskTokensDataset(BaseWrapperDataset):
         mask_multiple_length: int = 1,
         mask_stdev: float = 0.0,
         skip_masking: bool = False,
+        ref_dataset: torch.utils.data.Dataset = None,
     ):
         assert 0.0 < mask_prob < 1.0
         assert 0.0 <= random_token_prob <= 1.0
@@ -91,6 +95,7 @@ class MaskTokensDataset(BaseWrapperDataset):
         self.mask_multiple_length = mask_multiple_length
         self.mask_stdev = mask_stdev
         self.skip_masking = skip_masking
+        self.ref_dataset = ref_dataset
 
         if random_token_prob > 0.0:
             if freq_weighted_replacement:
@@ -128,12 +133,23 @@ class MaskTokensDataset(BaseWrapperDataset):
         if self.skip_masking:
             return torch.from_numpy(np.copy(item))
 
-        if self.mask_whole_words is not None:
-            word_begins_mask = self.mask_whole_words.gather(0, item)
+        # do whole word masking by one of two possible means
+        if self.ref_dataset is not None or self.mask_whole_words is not None:
+            # word_begins_mask: [1, 0, 0, 1, 0, 1, 1]
+            # 1 refers to /is_beginning_of_word: True/
+            word_begins_mask = self.mask_whole_words.gather(0, item) \
+                if self.mask_whole_words is not None else self.ref_dataset[index]
+            # # bos or eos or sep token
+            # word_begins_mask[word_begins_mask > 1] = 1
+            assert len(word_begins_mask) == sz
+            # word_begins_idx : torch.Tensor[0, 3, 5, 6]
             word_begins_idx = word_begins_mask.nonzero().view(-1)
+            # sz: 4
             sz = len(word_begins_idx)
+            # words : [[1, 0, 0], [1, 0], [1], [1]]
             words = np.split(word_begins_mask, word_begins_idx)[1:]
             assert len(words) == sz
+            # word_lens: [3, 2, 1, 1]
             word_lens = list(map(len, words))
 
         # decide elements to mask
@@ -178,7 +194,7 @@ class MaskTokensDataset(BaseWrapperDataset):
         if self.return_masked_tokens:
             # exit early if we're just returning the masked tokens
             # (i.e., the targets for masked LM training)
-            if self.mask_whole_words is not None:
+            if self.mask_whole_words is not None or self.ref_dataset is not None:
                 mask = np.repeat(mask, word_lens)
             new_item = np.full(len(mask), self.pad_idx)
             new_item[mask] = item[torch.from_numpy(mask.astype(np.uint8)) == 1]
@@ -205,7 +221,7 @@ class MaskTokensDataset(BaseWrapperDataset):
         if unmask is not None:
             mask = mask ^ unmask
 
-        if self.mask_whole_words is not None:
+        if self.mask_whole_words is not None or self.ref_dataset is not None:
             mask = np.repeat(mask, word_lens)
 
         new_item = np.copy(item)
@@ -213,7 +229,7 @@ class MaskTokensDataset(BaseWrapperDataset):
         if rand_mask is not None:
             num_rand = rand_mask.sum()
             if num_rand > 0:
-                if self.mask_whole_words is not None:
+                if self.mask_whole_words is not None or self.ref_dataset is not None:
                     rand_mask = np.repeat(rand_mask, word_lens)
                     num_rand = rand_mask.sum()
 
