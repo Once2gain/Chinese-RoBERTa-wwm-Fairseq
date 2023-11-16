@@ -1,3 +1,62 @@
+--------------------------------------------------------------------------------
+Implement [Chinese-BERT-wwm](https://github.com/ymcui/Chinese-BERT-wwm) to Fariseq 
+--------------------------------------------------------------------------------
+<p align="center">
+  
+  ### Main Aspects of Updates
+  #### Dictionary
+  [Dictionary class](https://github.com/facebookresearch/fairseq/blob/da8fb630880d529ab47e53381c30ddc8ad235216/fairseq/data/dictionary.py#L21) in fairseq/data/dictionary.py does not applicable to BERT-based task.
+  
+  RoBERTa and BERT use different Byte-Pair Encoding (BPE). Specifically, RoBERTa uses [Byte-level BPE](https://huggingface.co/learn/nlp-course/chapter6/5?fw=pt) as GPT-2 does. The GPT-2 or RoBERTa tokenizers don’t look at words as being written with Unicode characters, but with bytes. This way the base vocabulary has a small size (256), but every character you can think of will still be included and not end up being converted to the unknown token.
+  
+  Consider visible differences, RoBERTa's tokenizer/dictionary (manully) places special tokens in front of or behinds normal tokens ( just like [Dictionary class](https://github.com/facebookresearch/fairseq/blob/da8fb630880d529ab47e53381c30ddc8ad235216/fairseq/data/dictionary.py#L21) does). The positions can be inquried from [tokenizer.json](https://huggingface.co/roberta-base/blob/main/tokenizer.json), which is:
+  
+  `bos="<s>" id=0, pad="<pad>" id=1, eos="</s>" id=2, unk="<unk>" id=3, mask="<mask>" id=50264`
+  `5 special tokens, 50260 normal tokens, totally 50265 tokens`
+
+  Different from this, all tokens of BERT's tokenizer/dictionary are liet in its [vocab.txt](https://huggingface.co/bert-base-uncased/blob/main/vocab.txt), which is：
+  
+  `pad="[PAD]" id=0, unk="[UNK]" id=100, bos="[CLS]" id=101, eos="[SEP]" id=102, mask="<MASK>" id=103`
+
+  #### Whole Word Masking
+  
+  Following is copied from [google bert](https://github.com/google-research/bert)
+
+  ```
+  In the original pre-processing code, we randomly select WordPiece tokens to mask. For example:
+    
+  Input Text: the man jumped up , put his basket on phil ##am ##mon ' s head
+  Original Masked Input: [MASK] man [MASK] up , put his [MASK] on phil [MASK] ##mon ' s head
+  
+  The new technique is called Whole Word Masking. In this case, we always mask *all* of the the tokens corresponding to a word at once.
+  The overall masking rate remains the same.
+  
+  Whole Word Masked Input: the man [MASK] up , put his basket on [MASK] [MASK] [MASK] ' s head
+  
+  The training is identical -- we still predict each masked WordPiece token independently.
+  The improvement comes from the fact that the original prediction task was too 'easy' for words that had been split into multiple WordPieces.
+  ```
+
+  Following is copied from [Chinese-BERT-wwm]([https://github.com/google-research/bert](https://github.com/ymcui/Chinese-BERT-wwm)
+  
+  ```
+  In the Chinese language, it is straightforward to utilize whole word masking, as traditional text processing in Chinese should include Chinese Word Segmentation (CWS). In the original BERT-base, Chinese by Google, the segmentation is done by splitting the Chinese characters while   neglecting the importance of CWS. In this repository, we utilize Language Technology Platform (LTP) by Harbin Institute of Technology for CWS, and adapt whole word masking in Chinese text.
+  ```
+
+  Chinese-BERT-wwm project does not provide source code on Chinese whole word masking, so we follow above instructions to implement it. We use jieba package (freely replaced by other CWS tools) to segment a text to a words list, and by aligning it to corresponding tokens list, we obtain a mask tokens list that indicate if a token is the begining of a word or not.
+  
+  ### Specific changes
+  * Implemented whole word masking strategy by generating mask reference file (.ref) in [multiprocessing_bert_bpe_encoder.py](https://github.com/Once2gain/fairseq/blob/3840d7b50303cc21b55155aecebf4aa431fd6170/examples/roberta/multiprocessing_bert_bpe_encoder.py#L18) and leverage it to random masking process in [MaskedLMTask Class](https://github.com/Once2gain/fairseq/blob/3840d7b50303cc21b55155aecebf4aa431fd6170/fairseq/tasks/masked_lm.py#L218)
+  * Implemented [TokenizerDictionary Class](https://github.com/Once2gain/fairseq/blob/3840d7b50303cc21b55155aecebf4aa431fd6170/fairseq/data/tokenizer_dictionary.py#L12C2-L12C2) for BERT-based tasks. TokenizerDictionary takes *vocab.txt* as a input and construct a BertTokenizer.
+  * Modified [MaskTokensDataset Class](https://github.com/Once2gain/fairseq/blob/3840d7b50303cc21b55155aecebf4aa431fd6170/fairseq/data/mask_tokens_dataset.py#L137) to adapte to perform Chinese whole-word-mask strategy.
+  * Modified [RobertaModel Class](https://github.com/Once2gain/fairseq/blob/3840d7b50303cc21b55155aecebf4aa431fd6170/fairseq/models/roberta/model.py#L55C7-L55C7) to let it be able to loading huggingface pre-trained weight.
+
+</p>
+
+--------------------------------------------------------------------------------
+Following is README.md of Fairseq (https://github.com/facebookresearch/fairseq)
+--------------------------------------------------------------------------------
+
 <p align="center">
   <img src="docs/fairseq_logo.png" width="150">
   <br />
